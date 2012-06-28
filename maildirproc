@@ -289,6 +289,9 @@ class DryRunMail(MailBase):
     def move(self, maildir):
         self._processor.log("==> Moving to {0}".format(maildir))
 
+    def xfilter(self, args, shell=False, stderr=None):
+        self._processor.log("==> Xfiltering with {0}".format("'" + "' '".join(args) + "'"))
+
     # ----------------------------------------------------------------
 
     def _forward(self, delete, addresses, env_sender):
@@ -332,6 +335,10 @@ class Mail(MailBase):
             self.path.split(os.sep)[-2], # new/cur
             self._processor.create_maildir_name() + flagpart)
         self._processor.rename(self.path, target)
+
+    def xfilter(self, args, shell=False, stderr=None):
+        self._processor.log("==> Xfiltering with {0}".format("'" + "' '".join(args) + "'"))
+        self._xfilter(args, shell, stderr)
 
     # ----------------------------------------------------------------
 
@@ -433,6 +440,63 @@ class Mail(MailBase):
             return ":2," + parts[1]
         else:
             return ""
+
+    def _xfilter(self, args, shell, stderr):
+        # open source file
+        try:
+            source_fp = open(self.path, "rb")
+        except IOError as e:
+            # The file was probably (re)moved by some other process.
+            self._processor.log_mail_opening_error(self.path, e)
+            return
+
+        # create a new file in tmp
+        tmp_target = os.path.join(
+            self._processor.maildir_base,
+            self._maildir,
+            "tmp",
+            self._processor.create_maildir_name())
+        try:
+            tmp_target_fp = os.fdopen(
+                os.open(tmp_target, os.O_WRONLY | os.O_CREAT | os.O_EXCL),
+                "wb")
+        except IOError as e:
+            self._processor.log_io_error(
+                "Could not open {0} for writing".format(tmp_target),
+                e)
+            return
+
+        # run the process with source and target as stdin and stdout
+        p = subprocess.Popen(args,
+            stdin=source_fp, stdout=tmp_target_fp, stderr=stderr,
+            shell=shell)
+        
+        source_fp.close()
+        rc = p.wait()
+        tmp_target_fp.close()
+
+        self._processor.log_info("Xfilter process returned {0}".format(rc))
+
+        # if process was successful, overwrite source with target and reparse mail
+        if rc == 0:
+            try:
+                self._processor.rename(tmp_target, self.path)
+            except IOError as e:
+                self._processor.log_io_error(
+                    "Could not rename {0} to {1}".format(tmp_target, self.path),
+                    e)
+                return
+
+            self._headers = {}
+            self._parse_mail()
+        else:
+            try:
+                os.unlink(tmp_target)
+            except IOError as e:
+                self._processor.log_io_error(
+                    "Could not clean up temp file {0} after failure".format(tmp_target),
+                    e)
+            return
 
 
 class MaildirProcessor(object):
