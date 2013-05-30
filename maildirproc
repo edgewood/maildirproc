@@ -291,6 +291,7 @@ class DryRunMail(MailBase):
 
     def xfilter(self, args, shell=False, stderr=None):
         self._processor.log("==> Xfiltering with {0}".format("'" + "' '".join(args) + "'"))
+        return True
 
     # ----------------------------------------------------------------
 
@@ -338,7 +339,7 @@ class Mail(MailBase):
 
     def xfilter(self, args, shell=False, stderr=None):
         self._processor.log("==> Xfiltering with {0}".format("'" + "' '".join(args) + "'"))
-        self._xfilter(args, shell, stderr)
+        return self._xfilter(args, shell, stderr)
 
     # ----------------------------------------------------------------
 
@@ -448,7 +449,7 @@ class Mail(MailBase):
         except IOError as e:
             # The file was probably (re)moved by some other process.
             self._processor.log_mail_opening_error(self.path, e)
-            return
+            return False
 
         # create a new file in tmp
         tmp_target = os.path.join(
@@ -464,7 +465,7 @@ class Mail(MailBase):
             self._processor.log_io_error(
                 "Could not open {0} for writing".format(tmp_target),
                 e)
-            return
+            return False
 
         # run the process with source and target as stdin and stdout
         p = subprocess.Popen(args,
@@ -485,7 +486,7 @@ class Mail(MailBase):
                 self._processor.log_io_error(
                     "Could not rename {0} to {1}".format(tmp_target, self.path),
                     e)
-                return
+                return False
 
             self._headers = {}
             self._parse_mail()
@@ -496,8 +497,9 @@ class Mail(MailBase):
                 self._processor.log_io_error(
                     "Could not clean up temp file {0} after failure".format(tmp_target),
                     e)
-            return
+            return False
 
+        return True
 
 class MaildirProcessor(object):
     def __init__(
