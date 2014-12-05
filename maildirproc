@@ -337,9 +337,9 @@ class Mail(MailBase):
             self._processor.create_maildir_name() + flagpart)
         self._processor.rename(self.path, target)
 
-    def xfilter(self, args, shell=False, stderr=None):
+    def xfilter(self, args, shell=False, stderr=None, consume=False):
         self._processor.log("==> Xfiltering with {0}".format("'" + "' '".join(args) + "'"))
-        return self._xfilter(args, shell, stderr)
+        return self._xfilter(args, shell, stderr, consume)
 
     # ----------------------------------------------------------------
 
@@ -442,7 +442,7 @@ class Mail(MailBase):
         else:
             return ""
 
-    def _xfilter(self, args, shell, stderr):
+    def _xfilter(self, args, shell, stderr, consume):
         # open source file
         try:
             source_fp = open(self.path, "rb")
@@ -478,18 +478,28 @@ class Mail(MailBase):
 
         self._processor.log_info("Xfilter process returned {0}".format(rc))
 
-        # if process was successful, overwrite source with target and reparse mail
+        # if process was successful
         if rc == 0:
-            try:
-                self._processor.rename(tmp_target, self.path)
-            except IOError as e:
-                self._processor.log_io_error(
-                    "Could not rename {0} to {1}".format(tmp_target, self.path),
-                    e)
+            if consume:
+                try:
+                    os.unlink(tmp_target)
+                except IOError as e:
+                    self._processor.log_io_error(
+                        "Could not clean up temp file {0} after success".format(tmp_target),
+                        e)
                 return False
+            # overwrite source with target and reparse mail
+            else:
+                try:
+                    self._processor.rename(tmp_target, self.path)
+                except IOError as e:
+                    self._processor.log_io_error(
+                        "Could not rename {0} to {1}".format(tmp_target, self.path),
+                        e)
+                    return False
 
-            self._headers = {}
-            self._parse_mail()
+                self._headers = {}
+                self._parse_mail()
         else:
             try:
                 os.unlink(tmp_target)
